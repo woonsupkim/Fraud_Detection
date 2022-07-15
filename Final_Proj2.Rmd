@@ -1,0 +1,220 @@
+---
+title: "5205 Project Proposal"
+author: "Group 6"
+date: "2/28/2022"
+output: html_document
+---
+
+```{r, results='hide', message=FALSE, warning=FALSE, echo = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = 'C:/Users/Woon/Desktop/Columbia/Applied Analytics/Term2/APAN5205/Project')
+```
+
+
+```{r, message=FALSE, warning=FALSE}
+library(dplyr)
+library(skimr)
+library(ggplot2)
+library(lubridate)
+```
+
+## The Data
+
+```{r}
+data = read.csv('clean_data.csv')
+
+data = data %>% mutate(across(where(is.character),as.factor))
+
+data$cc_num <- as.factor(data$cc_num)
+data$zip <- as.factor(data$zip)
+data$trans_date_trans_time = as_datetime(data$trans_date_trans_time)
+  
+#data_indiv = filter(data, cc_num == '30270432095985')
+```
+
+# Bucketing User Behavior
+```{r}
+data_bucket = data %>% group_by(cc_num) %>% summarize('count' = n(), 'avg_spending' = median(amt))
+data_bucket$spending_rate = data_bucket$avg_spending/data_bucket$count
+
+library(mclust)
+mclusters1 = Mclust(data_bucket$spending_rate)
+summary(mclusters1)
+profile = mclusters1$classification
+
+data_bucket = cbind(data_bucket, profile)
+
+#splitting data based on profile and choosing the one with most number of transactions as training data
+data_bucket1 = filter(data_bucket, profile == 1) %>% arrange(desc(count))
+data_bucket1 = filter(data, cc_num == data_bucket1$cc_num[1])
+
+data_bucket2 = filter(data_bucket, profile == 2) %>% arrange(desc(count))
+data_bucket2 = filter(data, cc_num == data_bucket2$cc_num[1])
+
+data_bucket3 = filter(data_bucket, profile == 3) %>% arrange(desc(count))
+data_bucket3 = filter(data, cc_num == data_bucket3$cc_num[1])
+
+data_bucket4 = filter(data_bucket, profile == 4) %>% arrange(desc(count))
+data_bucket4 = filter(data, cc_num == data_bucket4$cc_num[1])
+
+data_bucket5 = filter(data_bucket, profile == 5) %>% arrange(desc(count))
+data_bucket5 = filter(data, cc_num == data_bucket5$cc_num[1])
+
+data_bucket6 = filter(data_bucket, profile == 6) %>% arrange(desc(count))
+data_bucket6 = filter(data, cc_num == data_bucket6$cc_num[1])
+
+data_bucket7 = filter(data_bucket, profile == 7) %>% arrange(desc(count))
+data_bucket7 = filter(data, cc_num == data_bucket7$cc_num[1])
+
+data_bucket8 = filter(data_bucket, profile == 8) %>% arrange(desc(count))
+data_bucket8 = filter(data, cc_num == data_bucket8$cc_num[1])
+```
+
+
+## Model based clustering
+```{r}
+library(mclust)
+m_clusters1 = Mclust(data=data_bucket1$amt)
+m_segments1 = m_clusters1$classification
+
+m_clusters2 = Mclust(data=data_bucket2$amt)
+m_segments2 = m_clusters2$classification
+
+m_clusters3 = Mclust(data=data_bucket3$amt)
+m_segments3 = m_clusters3$classification
+
+m_clusters4 = Mclust(data=data_bucket4$amt)
+m_segments4 = m_clusters4$classification
+
+m_clusters5 = Mclust(data=data_bucket5$amt)
+m_segments5 = m_clusters5$classification
+
+m_clusters6 = Mclust(data=data_bucket6$amt)
+m_segments6 = m_clusters6$classification
+
+m_clusters7 = Mclust(data=data_bucket7$amt)
+m_segments7 = m_clusters7$classification
+
+m_clusters8 = Mclust(data=data_bucket8$amt)
+m_segments8 = m_clusters8$classification
+```
+
+<!-- # Kmodes -->
+
+<!-- ```{r} -->
+<!-- cat = data_indiv %>% select_if(is.factor) %>%  names() -->
+<!-- cat_data = data_indiv[cat] -->
+<!-- cat_data = cat_data[,c(2,3, 13)] -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- library(klaR) -->
+<!-- hasil = kmodes(cat_data, 10, iter.max = 7, weighted = FALSE, fast = TRUE) -->
+<!-- kmode_segments = hasil$cluster -->
+<!-- ``` -->
+
+```{r}
+data_clusters = cbind(data_indiv, h_segments, k_segments, m_segments, kmode_segments)
+```
+
+
+
+
+# Evaluating different clusters on indiv_user
+## Hierarchical clustering
+```{r}
+data_clusters$h_is_fraud_pred = 0
+
+a = attributes(sort(table(h_segments))[1])$name
+a = as.numeric(a)
+
+b = attributes(sort(table(h_segments))[2])$name
+b = as.numeric(b)
+
+data_clusters$h_is_fraud_pred[data_clusters$h_segments == a] = 1
+data_clusters$h_is_fraud_pred[data_clusters$h_segments == b] = 1
+
+```
+
+
+## K clustering
+```{r}
+
+data_clusters$k_is_fraud_pred = 0
+
+a = attributes(sort(table(k_segments))[1])$name
+a = as.numeric(a)
+
+b = attributes(sort(table(k_segments))[2])$name
+b = as.numeric(b)
+
+data_clusters$k_is_fraud_pred[data_clusters$k_segments == a] = 1
+data_clusters$k_is_fraud_pred[data_clusters$k_segments == b] = 1
+```
+
+
+## m clustering
+```{r}
+data_clusters$m_is_fraud_pred = 0
+
+a = attributes(sort(table(m_segments))[1])$name
+a = as.numeric(a)
+
+b = attributes(sort(table(m_segments))[2])$name
+b = as.numeric(b)
+
+data_clusters$m_is_fraud_pred[data_clusters$m_segments == a] = 1
+data_clusters$m_is_fraud_pred[data_clusters$m_segments == b] = 1
+```
+
+
+# kmode
+
+```{r}
+data_clusters$kmode_is_fraud_pred = 0
+
+a = attributes(sort(table(kmode_segments))[1])$name
+a = as.numeric(a)
+
+b = attributes(sort(table(kmode_segments))[2])$name
+b = as.numeric(b)
+
+data_clusters$kmode_is_fraud_pred[data_clusters$kmode_segments == a] = 1
+data_clusters$kmode_is_fraud_pred[data_clusters$kmode_segments == b] = 1
+
+#kmode_is_fraud_pred = kmode_data_cluster$kmode_is_fraud_pred
+
+#data_clusters = cbind(data_clusters, kmode_is_fraud_pred)
+```
+
+
+```{r}
+library(caret)
+
+#data_clusters$ensemble_pred = data_clusters$m_is_fraud_pred
+
+result_matrix = data_clusters[,c(17, 26:29)]
+
+table(result_matrix$is_fraud, result_matrix$h_is_fraud_pred)
+table(result_matrix$is_fraud, result_matrix$k_is_fraud_pred)
+table(result_matrix$is_fraud, result_matrix$m_is_fraud_pred)
+table(result_matrix$is_fraud, result_matrix$kmode_is_fraud_pred)
+#table(result_matrix$is_fraud, result_matrix$ensemble_pred)
+```
+
+
+
+#Test on new user
+
+```{r}
+library(flexclust)
+
+km_kcca = as.kcca(km,data_indiv$amt) # flexclust uses objects of the classes kcca
+clusterTrain = predict(km_kcca)
+
+data_indiv_test = filter(data, cc_num == '4364010865167176')
+clusterTest = predict(km_kcca,newdata=data_indiv_test$amt)
+
+
+```
+

@@ -1,0 +1,430 @@
+---
+title: "5205 Project Proposal"
+author: "Group 6"
+date: "4/20/2022"
+output: html_document
+params:
+  credit_card_number: "30270432095985"
+---
+
+```{r, results='hide', message=FALSE, warning=FALSE, echo = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = 'C:/Users/Woon/Desktop/Columbia/Applied Analytics/Term2/APAN5205/Project')
+```
+
+```{r}
+cc_number = function()# Get the credit card number
+{ 
+  params$cc_number
+}
+cc_number=cc_number()
+cc_number
+```
+
+
+```{r}
+library(dplyr)
+library(skimr)
+library(ggplot2)
+library(lubridate)
+```
+
+## The Data
+
+```{r}
+data = read.csv('clean_data.csv')
+
+data = data %>% mutate(across(where(is.character),as.factor))
+
+data$cc_num <- as.factor(data$cc_num)
+data$zip <- as.factor(data$zip)
+data$trans_date_trans_time = as_datetime(data$trans_date_trans_time)
+```
+
+# Bucketing User Behaviour
+r
+```{r}
+data_bucket = data %>% group_by(cc_num) %>% summarize('count' = n())
+```
+
+## Silhouette for profiling
+```{r}
+library(cluster)
+silhoette_width = sapply(2:20,
+                         FUN = function(x) pam(x=data_bucket$count, k=x)$silinfo$avg.width)
+
+ggplot(data=data.frame(cluster = 2:20,silhoette_width), aes(x=cluster,y=silhoette_width))+
+  geom_line(col='steelblue',size=1.2)+
+  geom_point()+
+  scale_x_continuous(breaks=seq(2,20,1))
+```
+
+### Use 7 buckets
+
+
+```{r}
+set.seed(617)
+km_profile = kmeans(x=data_bucket$count, centers=7, iter.max=10000, nstart=25)
+k_segments_profile = km_profile$cluster
+table(k_segments_profile)
+data_bucket = cbind(data_bucket, 'profile' = k_segments_profile)
+```
+
+```{r}
+cc_representative = c(
+                      (data_bucket %>% arrange(desc(count)) %>% filter(profile == 1))[1,1],
+                      (data_bucket %>% arrange(desc(count)) %>% filter(profile == 2))[2,1],
+                      (data_bucket %>% arrange(desc(count)) %>% filter(profile == 3))[3,1],
+                      (data_bucket %>% arrange(desc(count)) %>% filter(profile == 4))[4,1],
+                      (data_bucket %>% arrange(desc(count)) %>% filter(profile == 5))[5,1],
+                      (data_bucket %>% arrange(desc(count)) %>% filter(profile == 6))[6,1],
+                      (data_bucket %>% arrange(desc(count)) %>% filter(profile == 7))[7,1]
+                      )
+
+```
+
+
+
+```{r}
+library(svDialogs)
+#cc_number <- dlgInput("Enter credit card number", Sys.info()["user"])$res
+
+cc_number = 30270432095985  
+ # cc_number = as.numeric(as.character(cc_representative[1]))  
+ # cc_number = as.numeric(as.character(cc_representative[2]))
+ # cc_number = as.numeric(as.character(cc_representative[3]))
+ # cc_number = as.numeric(as.character(cc_representative[4]))
+ # cc_number = as.numeric(as.character(cc_representative[5]))
+ # cc_number = as.numeric(as.character(cc_representative[6]))
+ # cc_number = as.numeric(as.character(cc_representative[7]))
+
+data_indiv = filter(data, cc_num == cc_number)
+```
+
+
+
+## Total within sum of square plot
+```{r}
+within_ss = sapply(1:10,FUN = function(x){
+  set.seed(617)
+  kmeans(x=data_indiv$amt, centers=x, iter.max=1000, nstart=25)$tot.withinss})
+
+ggplot(data=data.frame(cluster = 1:10,within_ss), aes(x=cluster,y=within_ss))+
+  geom_line(col='steelblue',size=1.2)+
+  geom_point()+
+  scale_x_continuous(breaks=seq(1,10,1))
+```
+## Ratio plot
+```{r}
+ratio_ss = sapply(1:10,FUN = function(x) {
+  set.seed(617)
+  km = kmeans(x=data_indiv$amt, centers=x, iter.max=1000, nstart=25)
+  km$betweenss/km$totss} )
+
+ggplot(data=data.frame(cluster = 1:10,ratio_ss), aes(x=cluster,y=ratio_ss))+
+  geom_line(col='steelblue',size=1.2)+
+  geom_point()+
+  scale_x_continuous(breaks=seq(1,10,1))
+```
+## Silhouette
+```{r}
+library(cluster)
+silhoette_width = sapply(2:10,
+                         FUN = function(x) pam(x=data_indiv$amt, k=x)$silinfo$avg.width)
+
+ggplot(data=data.frame(cluster = 2:10,silhoette_width), aes(x=cluster,y=silhoette_width))+
+  geom_line(col='steelblue',size=1.2)+
+  geom_point()+
+  scale_x_continuous(breaks=seq(2,10,1))
+```
+
+### Silhouette suggests 4, 6 or 9
+### Others suggests 4
+### Since we want to detect niche, we'll use 9 clusters
+
+
+# Hierarchical Clustering
+```{r}
+d = dist(x = data_indiv$amt ,method = 'euclidean')
+clusters = hclust(d = d,method='ward.D2')
+```
+
+```{r}
+h_segments = cutree(tree=clusters, k=9)
+table(h_segments)
+```
+
+# K-means Clustering
+
+```{r}
+set.seed(617)
+km = kmeans(x=data_indiv$amt, centers=9, iter.max=10000, nstart=25)
+
+k_segments = km$cluster
+table(k_segments)
+```
+
+## Model based clustering
+```{r}
+library(mclust)
+m_clusters = Mclust(data=data_indiv$amt)
+m_segments = m_clusters$classification
+#sort(table(m_segments))
+
+#plot(m_clusters, what = "density", xlim = c(0, 300))
+plot(m_clusters, what = "uncertainty", xlim = c(0, 500))
+plot(m_clusters, what = 'classification', xlim = c(0, 500))
+```
+
+
+# Kmodes
+```{r}
+cat = data_indiv %>% select_if(is.factor) %>%  names()
+cat_data = data_indiv[cat]
+cat_data = cat_data[,c(3,13)]
+```
+
+```{r}
+library(klaR)
+hasil = kmodes(cat_data, 7, iter.max = 7, weighted = FALSE, fast = TRUE)
+kmode_segments = hasil$cluster
+```
+
+```{r}
+data_clusters = cbind(data_indiv, h_segments, k_segments, m_segments, kmode_segments)
+data_clusters = data_clusters[,c(3,4,5,17,21:25)]
+```
+
+
+
+
+# Evaluating different clusters on indiv_user
+## Hierarchical clustering
+```{r}
+data_clusters$h_is_fraud_pred = 0
+
+a = attributes(sort(table(h_segments))[1])$name
+a = as.numeric(a)
+
+b = attributes(sort(table(h_segments))[2])$name
+b = as.numeric(b)
+
+c = attributes(sort(table(h_segments))[3])$name
+c = as.numeric(c)
+
+d = attributes(sort(table(h_segments))[4])$name
+d = as.numeric(d)
+
+data_clusters$h_is_fraud_pred[data_clusters$h_segments == a] = 1
+data_clusters$h_is_fraud_pred[data_clusters$h_segments == b] = 1
+data_clusters$h_is_fraud_pred[data_clusters$h_segments == c] = 1
+data_clusters$h_is_fraud_pred[data_clusters$h_segments == d] = 1
+
+```
+
+
+## K clustering
+```{r}
+
+data_clusters$k_is_fraud_pred = 0
+
+a = attributes(sort(table(k_segments))[1])$name
+a = as.numeric(a)
+
+b = attributes(sort(table(k_segments))[2])$name
+b = as.numeric(b)
+
+c = attributes(sort(table(k_segments))[3])$name
+c = as.numeric(c)
+
+d = attributes(sort(table(k_segments))[4])$name
+d = as.numeric(d)
+
+data_clusters$k_is_fraud_pred[data_clusters$k_segments == a] = 1
+data_clusters$k_is_fraud_pred[data_clusters$k_segments == b] = 1
+data_clusters$k_is_fraud_pred[data_clusters$k_segments == c] = 1
+data_clusters$k_is_fraud_pred[data_clusters$k_segments == d] = 1
+
+```
+
+## m clustering
+```{r}
+data_clusters$m_is_fraud_pred = 0
+
+a = attributes(sort(table(m_segments))[1])$name
+a = as.numeric(a)
+
+b = attributes(sort(table(m_segments))[2])$name
+b = as.numeric(b)
+
+data_clusters$m_is_fraud_pred[data_clusters$m_segments == a] = 1
+data_clusters$m_is_fraud_pred[data_clusters$m_segments == b] = 1
+```
+
+
+# kmode
+
+```{r}
+data_clusters$kmode_is_fraud_pred = 0
+
+a = attributes(sort(table(kmode_segments))[1])$name
+a = as.numeric(a)
+
+b = attributes(sort(table(kmode_segments))[2])$name
+b = as.numeric(b)
+
+data_clusters$kmode_is_fraud_pred[data_clusters$kmode_segments == a] = 1
+data_clusters$kmode_is_fraud_pred[data_clusters$kmode_segments == b] = 1
+```
+
+
+```{r}
+library(caret)
+
+data_clusters$ensemble_pred = (data_clusters$m_is_fraud_pred | data_clusters$kmode_is_fraud_pred)
+
+result_matrix = data_clusters[,c(4, 10:14)]
+
+expected_value <- factor(result_matrix$is_fraud)
+h_predicted_value <- factor(result_matrix$h_is_fraud_pred)
+k_predicted_value <- factor(result_matrix$k_is_fraud_pred)
+m_predicted_value <- factor(result_matrix$m_is_fraud_pred)
+kmode_predicted_value <- factor(result_matrix$kmode_is_fraud_pred)
+ensemble_predicted_value <- factor(result_matrix$ensemble_pred)
+ 
+#Creating confusion matrix
+h_cm <- confusionMatrix(data=h_predicted_value, reference = expected_value)
+h_cm
+
+k_cm <- confusionMatrix(data=k_predicted_value, reference = expected_value)
+k_cm
+
+
+m_cm <- confusionMatrix(data=m_predicted_value, reference = expected_value)
+m_cm
+
+
+kmode_cm <- confusionMatrix(data=kmode_predicted_value, reference = expected_value)
+kmode_cm
+
+ensemble_cm <- confusionMatrix(data=as.factor(as.numeric(ensemble_predicted_value)-1), reference = expected_value)
+ensemble_cm
+
+```
+
+```{r}
+library(cvms)
+d_binomial <- tibble("target" = result_matrix$is_fraud,
+                     "prediction" = result_matrix$m_is_fraud_pred)
+
+basic_table <- table(d_binomial)
+
+cfm <- as_tibble(basic_table)
+
+plot_confusion_matrix(cfm,
+                      target_col = "target",
+                      prediction_col = "prediction",
+                      counts_col = "n")
+```
+
+
+#compare to logistic regression
+```{r}
+library(caTools)
+data_clusters2 = data_clusters[,c(2:5)]
+set.seed(5205)
+split = sample.split(data_clusters2$is_fraud, SplitRatio = 0.7)
+train = data_clusters2[split,]
+test = data_clusters2[!split,]
+
+model = glm(is_fraud ~., data = train, family = 'binomial')
+pred = predict(model, newdata = test, type = 'response')
+
+expected_value2 <- factor(test$is_fraud)
+glm_predicted_value <- factor(as.integer(pred>0.5))
+
+glm_cm <- confusionMatrix(data=glm_predicted_value, reference = expected_value2)
+glm_cm
+
+```
+
+
+# Spatial Analysis
+
+# visualizing data
+```{r}
+data_map = filter(data, is_fraud == 1)
+
+library(ggmap)
+register_google(key = 'AIzaSyDoFcnGofCofZb2RvD5Bqwnv3buSWarFws')
+map = get_map(location=c(-95.7129,37.0902), zoom=4, scale=4)
+
+
+ggmap(map)+
+  geom_point(data=data_map, aes(x=merch_long,y=merch_lat), size=0.5, alpha=0.5, color='red')
+```
+```{r}
+data_map2 = data_map %>% group_by(state) %>% summarize('count' = n()) %>% arrange(desc(count))
+data_map2
+
+```
+
+
+# analysis with the clusters
+```{r}
+merch_lat = data_indiv$merch_lat
+merch_long = data_indiv$merch_long
+
+data_spatial = cbind(data_clusters, merch_lat, merch_long)
+data_spatial_fraud_pred = filter(data_spatial, m_is_fraud_pred == 1)
+data_spatial_fraud = filter(data_spatial, is_fraud == 1)
+
+library(ggmap)
+register_google(key = 'AIzaSyDoFcnGofCofZb2RvD5Bqwnv3buSWarFws')
+map = get_map(location=c(median(data_spatial$merch_long), median(data_spatial$merch_lat)), zoom=8, scale=4)
+
+ggmap(map)+
+  geom_point(data=data_spatial, aes(x=merch_long,y=merch_lat), size=1, alpha=0.2, color='seagreen')+
+  geom_point(data=data_spatial_fraud_pred, aes(x=merch_long,y=merch_lat), size=1, alpha=1, color='red')
+
+ggmap(map)+
+  geom_point(data=data_spatial, aes(x=merch_long,y=merch_lat), size=1, alpha=0.2, color='seagreen')+
+  geom_point(data=data_spatial_fraud, aes(x=merch_long,y=merch_lat), size=1, alpha=1, color='red')
+
+
+```
+# Identifying proportions of fradulent merchant categories
+```{r}
+#from predicted
+library(data.table)
+cat = table(data_spatial_fraud_pred$category)
+cat2 = data.table(round(prop.table(cat)*100,2))
+
+tap = tapply(data_spatial_fraud_pred$amt, data_spatial_fraud_pred$category, sum)
+tap = as.data.frame.table(tap)
+#data.table(tap)
+
+cat2$sum = tap$Freq
+colnames(cat2) = c('category', 'proportions', 'Sum of Purchases ($)')
+cat2 =  cat2 %>% arrange(desc(proportions))
+colnames(cat2) = c('Merchant', 'Proportions (%)', 'Sum of Purchases ($)')
+cat2
+```
+
+```{r}
+#from actual
+library(data.table)
+cat = table(data_spatial_fraud$category)
+cat2 = data.table(round(prop.table(cat)*100,2))
+
+tap = tapply(data_spatial_fraud$amt, data_spatial_fraud$category, sum)
+tap = as.data.frame.table(tap)
+#data.table(tap)
+
+cat2$sum = tap$Freq
+colnames(cat2) = c('category', 'proportions', 'Sum of Purchases ($)')
+cat2 =  cat2 %>% arrange(desc(proportions))
+colnames(cat2) = c('Merchant', 'Proportions (%)', 'Sum of Purchases ($)')
+cat2
+```
+
